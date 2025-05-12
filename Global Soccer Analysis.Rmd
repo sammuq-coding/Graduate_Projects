@@ -1,0 +1,660 @@
+---
+title: "Final Project"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+---
+
+
+# Player Age and Performance in Global Soccer Leagues
+# ECON 3321/5321 Final Project
+# Author: Sam Muqbil
+# Date: April 2025
+
+
+This project explores the relationship between player age and on-field performance across a wide range of international soccer leagues using data from ESPN.
+
+The analysis draws on player-level statistics and demographic information with a focus on total goals scored. Three key research questions guide the study:
+
+
+All data cleaning, merging, and analysis are performed in R using the base_data, playerStats_data, and lineup_data folders.
+
+All data is from the ESPN website 
+[ESPN Soccer Statistics](https://developer.espn.com/)
+
+# Raw Data Description
+
+**Three datasets are used:**
+
+- 'base_data': contains general information about players, teams, competitions, and match outcomes.
+
+- 'playerStats_data': includes individual performance metrics such as goals and appearances.
+
+- 'lineup_data': lists starting lineups and player details like age and gender.
+
+Variables include: age, gender, goals, player_id, team_name, country, competition, match_date, etc.
+
+Data types: numeric (age, goals), character (names, country), factors (competition type, gender), and dates.
+
+**Units of Observation**
+Each row in the dataset represents a single player’s cumulative performance in a given league or tournament during the 2024 or 2025 season. That is, the unit of observation is a player-season or player-competition record. Player-level attributes (age, gender) are joined with season-level performance metrics (total goals, assists) and contextual information (league, region).
+
+```{r}
+library(dplyr)
+library(readr)
+library(purrr)
+library(ggplot2)
+library(stringr)
+library(fixest)
+```
+# Data Cleaning
+
+**Column Names:**
+
+- Columns were renamed to a consistent and readable snake_case format using janitor::clean_names().
+
+**Data Types:**
+
+- Columns like age and goals were ensured to be numeric.
+
+- Date columns were converted using lubridate functions.
+
+- Factors were appropriately assigned to categorical columns.
+
+**Missing Values:**
+
+- Missing ages and goals were addressed (e.g., excluded or imputed, depending on the variable).
+
+- Filtering removed rows with NA in key fields like age or goals for clean analysis.
+
+**Potential Errors:**
+
+- Duplicate players or missing identifiers were checked and filtered.
+
+- Player names were cross-validated using player IDs to avoid mismatches in joins.
+
+# Data Analysis 
+## 1. How Does Player Age Relate to Performance Across All Regions?
+```{r}
+setwd("/Users/youngmelo/Final Project/archive")
+```
+
+```{r}
+league_rename_map <- c(
+  "AFC.CHAMPIONS" = "AFC Champions League",
+  "AFC.CUP" = "AFC Cup",
+  "ARG.1" = "Liga Profesional (Argentina)",
+  "ARG.2" = "Primera Nacional (Argentina)",
+  "ARG.COPA_LPF" = "Copa de la Liga Profesional (Argentina)",
+  "AUS.1" = "A-League Men (Australia)",
+  "AUS.W.1" = "A-League Women (Australia)",
+  "AUT.1" = "Austrian Bundesliga",
+  "BEL.1" = "Belgian Pro League",
+  "BRA.1" = "Brasileirão Série A",
+  "BRA.2" = "Brasileirão Série B",
+  "BRA.CAMP.CARIOCA" = "Campeonato Carioca",
+  "BRA.CAMP.GAUCHO" = "Campeonato Gaúcho",
+  "BRA.CAMP.MINEIRO" = "Campeonato Mineiro",
+  "BRA.CAMP.PAULISTA" = "Campeonato Paulista",
+  "BRA.COPA_DO_BRAZIL" = "Copa do Brasil",
+  "CAF.CHAMPIONS" = "CAF Champions League",
+  "CAF.CONFED" = "CAF Confederation Cup",
+  "CAF.NATIONS_QUAL" = "AFCON Qualifiers",
+  "CAMPEONES.CUP" = "Campeones Cup",
+  "CHI.1" = "Chilean Primera División",
+  "CHI.COPA_CHI" = "Copa Chile",
+  "CHN.1" = "Chinese Super League",
+  "COL.1" = "Categoría Primera A (Colombia)",
+  "CONCACAF.CHAMPIONS" = "CONCACAF Champions Cup",
+  "CONCACAF.LEAGUES.CUP" = "Leagues Cup",
+  "CONCACAF.NATIONS.LEAGUE" = "CONCACAF Nations League",
+  "CONCACAF.W.CHAMPIONS_CUP" = "CONCACAF W Champions Cup",
+  "CONMEBOL.AMERICA" = "Copa América",
+  "CONMEBOL.LIBERTADORES" = "Copa Libertadores",
+  "CONMEBOL.RECOPA" = "Recopa Sudamericana",
+  "CONMEBOL.SUDAMERICANA" = "Copa Sudamericana",
+  "DEN.1" = "Danish Superliga",
+  "ECU.1" = "Liga Pro (Ecuador)",
+  "ENG.2" = "EFL Championship",
+  "ENG.3" = "EFL League One",
+  "ENG.4" = "EFL League Two",
+  "ENG.5" = "National League (England)",
+  "ENG.CHARITY" = "FA Community Shield",
+  "ENG.LEAGUE_CUP" = "EFL Cup (Carabao Cup)",
+  "ENG.TROPHY" = "EFL Trophy",
+  "ENG.W.1" = "Women's Super League (England)",
+  "ESP.2" = "Segunda División (Spain)",
+  "ESP.COPA_DEL_REY" = "Copa del Rey",
+  "ESP.JOAN_GAMPER" = "Joan Gamper Trophy",
+  "ESP.SUPER_CUP" = "Supercopa de España",
+  "ESP.W.1" = "Liga F (Spain Women)",
+  "FIFA.FRIENDLY" = "FIFA International Friendly",
+  "FIFA.FRIENDLY.W" = "FIFA Women's Friendly",
+  "FIFA.OLYMPICS" = "Olympic Football Tournament (Men)",
+  "FIFA.SHEBELIEVES" = "SheBelieves Cup",
+  "FIFA.W.OLYMPICS" = "Olympic Football Tournament (Women)",
+  "FIFA.WORLDQ.CONCACAF" = "World Cup Qualifiers (CONCACAF)",
+  "FIFA.WORLDQ.UEFA" = "World Cup Qualifiers (UEFA)",
+  "FIFA.WWORLD.U17" = "FIFA Women's U-17 World Cup",
+  "FRA.2" = "Ligue 2",
+  "FRA.SUPER_CUP" = "Trophée des Champions",
+  "FRA.W.1" = "Division 1 Féminine",
+  "FRIENDLY.EMIRATES_CUP" = "Emirates Cup",
+  "GER.2" = "2. Bundesliga",
+  "GER.DFB_POKAL" = "DFB-Pokal",
+  "GER.SUPER_CUP" = "DFL-Supercup",
+  "GLOBAL.PINATAR_CUP" = "Pinatar Cup",
+  "GLOBAL.TOULON" = "Toulon Tournament",
+  "GRE.1" = "Super League Greece",
+  "IND.1" = "Indian Super League",
+  "IND.2" = "I-League (India)",
+  "ITA.2" = "Serie B",
+  "ITA.COPPA_ITALIA" = "Coppa Italia",
+  "JPN.1" = "J1 League (Japan)",
+  "JPN.WORLD_CHALLENGE" = "Japan World Challenge",
+  "KSA.1" = "Saudi Pro League",
+  "KSA.KINGS.CUP" = "King's Cup (Saudi Arabia)",
+  "MEX.1" = "Liga MX",
+  "NED.1" = "Eredivisie",
+  "NED.2" = "Eerste Divisie",
+  "NED.SUPERCUP" = "Johan Cruijff Shield",
+  "NED.W.1" = "Vrouwen Eredivisie",
+  "NOR.1" = "Eliteserien (Norway)",
+  "PAR.1" = "Primera División (Paraguay)",
+  "PER.1" = "Liga 1 (Peru)",
+  "POR.1" = "Primeira Liga",
+  "POR.TACA.PORTUGAL" = "Taça de Portugal",
+  "ROU.1" = "Liga I (Romania)",
+  "RSA.1" = "Premier Soccer League (South Africa)",
+  "RUS.1" = "Russian Premier League",
+  "SCO.1" = "Scottish Premiership",
+  "SCO.2" = "Scottish Championship",
+  "SCO.3" = "Scottish League One",
+  "SCO.4" = "Scottish League Two",
+  "SCO.CIS" = "Scottish League Cup",
+  "SUI.1" = "Swiss Super League",
+  "SWE.1" = "Allsvenskan (Sweden)",
+  "TUR.1" = "Süper Lig (Turkey)",
+  "UEFA.CHAMPIONS" = "UEFA Champions League",
+  "UEFA.CHAMPIONS_QUAL" = "UEFA Champions League Qualifiers",
+  "UEFA.EURO" = "UEFA European Championship",
+  "UEFA.EURO.U19" = "UEFA U-19 Championship",
+  "UEFA.EUROPA" = "UEFA Europa League",
+  "UEFA.EUROPA_QUAL" = "UEFA Europa League Qualifiers",
+  "UEFA.EUROPA.CONF" = "UEFA Europa Conference League",
+  "UEFA.EUROPA.CONF_QUAL" = "UEFA Europa Conference Qualifiers",
+  "UEFA.NATIONS" = "UEFA Nations League",
+  "UEFA.SUPER_CUP" = "UEFA Super Cup",
+  "UEFA.W.NATIONS" = "UEFA Women's Nations League",
+  "UEFA.WCHAMPIONS" = "UEFA Women's Champions League",
+  "USA.1" = "Major League Soccer",
+  "USA.NCAA.W.1" = "NCAA Division I Women",
+  "USA.NWSL" = "NWSL",
+  "USA.NWSL.CUP" = "NWSL Challenge Cup",
+  "USA.OPEN" = "U.S. Open Cup",
+  "USA.USL.1" = "USL Championship",
+  "USA.USL.L1" = "USL League One",
+  "USA.USL.L1.CUP" = "USL League One Cup",
+  "WAL.1" = "Cymru Premier"
+)
+```
+
+- to make sure the right names show up on the graphs
+
+# Data Analysis 
+
+## 1.a. How does player age relate to performance across all leagues?
+
+```{r}
+players <- read_csv("base_data/players.csv", show_col_types = FALSE) |>
+  select(athleteId, age, gender, displayName) |> 
+   filter(!is.na(age), !is.na(athleteId)) |>
+  distinct(athleteId, .keep_all = TRUE) |>
+  mutate(gender = str_to_title(gender))
+```
+
+```{r}
+player_stats_files <- list.files("playerStats_data/", pattern = "\\.csv$", full.names = TRUE)
+```
+
+```{r}
+player_stats <- player_stats_files |>
+  map_dfr(read_csv, show_col_types = FALSE)
+```
+
+- loads and combines multiple CSV files into a single data frame.
+- map_dfr(...)	Applies a function to each file and combines the results into a single data frame.
+- read_csv	The function applied to each file. Reads it into R as a tibble.
+- show_col_types = FALSE	Suppresses the column type message from printing each time.
+
+```{r}
+merged_data <- player_stats |>
+  left_join(players, by = "athleteId") |>
+  filter(!is.na(age))
+
+merged_data <- merged_data |>
+  mutate(league = case_when(
+    league == "ENG.1" ~ "Premier League",
+    league == "ESP.1" ~ "La Liga",
+    league == "ITA.1" ~ "Serie A",
+    league == "GER.1" ~ "Bundesliga",
+    league == "FRA.1" ~ "Ligue 1",
+    TRUE ~ league 
+  ))
+```
+
+```{r}
+model <- lm(totalGoals_value ~ age, data = merged_data)
+summary(model)
+```
+- lm(...)	This fits a linear regression model. In this case, you're modeling how totalGoals_value (the dependent variable) changes as age (the independent variable) changes.
+- totalGoals_value ~ age	This formula means: "predict total goals scored based on player age."
+- data = merged_data	This tells R to look for the variables totalGoals_value and age inside the merged_data dataset.
+- model <- ...	This saves the fitted model into an object called model, so you can use it later (e.g., in summary(), predict(), or plots).
+- summary(model)	This prints out the full regression summary: coefficients, standard errors, t-values, R², and p-values.
+```{r}
+ggplot(merged_data, aes(x = age, y = totalGoals_value)) +
+  geom_point(alpha = 0.3, color = "darkolivegreen") +
+  geom_smooth(method = "lm", color = "tan", fill = "lightgrey") +
+  labs(
+    title = "Player Age vs Total Goals (All Leagues)",
+    x = "Age", y = "Total Goals"
+  ) +
+  theme_minimal()
+
+```
+
+## 1.b. Player Performance by Assists (All Leagues)
+ 
+```{r}
+merged_data |>
+  filter(!is.na(age), !is.na(goalAssists_value)) |>
+  group_by(age) |>
+  summarise(avg_assists = mean(goalAssists_value, na.rm = TRUE)) |>
+  ggplot(aes(x = age, y = avg_assists)) +
+  geom_col(fill = "olivedrab") +
+  labs(
+    title = "Average Player Assists by Age (All Regions)",
+    x = "Age", y = "Average Assists"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+merged_data |>
+  filter(!is.na(age), goalAssists_value > 0) |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "darkolivegreen", color = "white") +
+  labs(
+    title = "Distribution of Assisting Players by Age",
+    x = "Age", y = "Number of Players"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+model_assists_overall <- lm(goalAssists_value ~ age, data = merged_data)
+summary(model_assists_overall)
+```
+
+## 2.a. How Does Player Age Relate to Performance by Region?
+
+```{r}
+merged_data <- merged_data |>
+  mutate(region = case_when(
+    str_detect(league, "ENG|ESP|ITA|FRA|GER|NED|SCO|POR|BEL|SUI|SWE|NOR|RUS") ~ "Europe",
+    str_detect(league, "ARG|BRA|COL|PER|ECU|PAR|URU|BOL|CHI") ~ "South America",
+    str_detect(league, "USA|CAN|MEX") ~ "North America",
+    str_detect(league, "JPN|KOR|CHN|IND|KSA|QAT|AUS") ~ "Asia-Pacific",
+    str_detect(league, "AFR|CAF") ~ "Africa",
+    TRUE ~ "Other"
+  ))
+```
+
+
+```{r}
+ggplot(merged_data, aes(x = age, y = totalGoals_value)) +
+  geom_point(alpha = 0.2, color = "tan") +
+  geom_smooth(method = "lm", color = "darkolivegreen", fill = "lightgrey") +
+  facet_wrap(~ region) +
+  labs(
+    title = "Player Age vs Total Goals by Region",
+    x = "Age", y = "Total Goals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+model_goals_region <- lm(totalGoals_value ~ age + region, data = merged_data)
+summary(model_goals_region)
+```
+
+## 2.b.Players performance by Assists per Region
+
+```{r}
+merged_data |>
+  filter(!is.na(age), !is.na(goalAssists_value), !is.na(region)) |>
+  ggplot(aes(x = region, y = goalAssists_value)) +
+  geom_violin(fill = "tan", color = "darkolivegreen", alpha = 0.7) +
+  labs(
+    title = "Player Performance by Assists per Region",
+    x = "Region", y = "Total Assists"
+  ) +
+  geom_boxplot(width = 0.1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+model_assists_region <- lm(goalAssists_value ~ age + region, data = merged_data)
+summary(model_goals_region)
+```
+
+## 3.a. How Does Player Age Relate to Performance by Gender?
+
+```{r}
+gender_data <- merged_data |>
+  filter(!is.na(gender), !is.na(age), !is.na(totalGoals_value))
+```
+
+```{r}
+ggplot(gender_data, aes(x = age, y = totalGoals_value, color = gender, fill = gender)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", alpha = 0.3) +
+  labs(
+    title = "Player Age vs Total Goals by Gender",
+    x = "Age", y = "Total Goals"
+  ) +
+  theme_minimal()
+```
+
+- ggplot initializes a plot using the gender_data dataset.
+Sets up the aesthetics (aes): x = age (horizontal axis), y = totalGoals_value (vertical axis), color = gender, fill = gender: differentiates lines and shaded areas by gender.
+-geom_point adds semi-transparent scatterplot dots (individual player data). alpha = 0.2 makes the dots see-through to reduce clutter.
+- geom_smooth adds a linear regression line (one per gender).Shaded confidence bands are also shown using the fill color. method = "lm" fits a linear model (straight line).
+
+```{r}
+ggplot(gender_data, aes(x = age, y = totalGoals_value, color = gender, fill = gender)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm") +
+  facet_wrap(~ gender) +
+  labs(
+    title = "Player Age vs Total Goals by Gender",
+    x = "Age", y = "Total Goals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+model_goals_gender <- lm(totalGoals_value ~ age + gender, data = merged_data)
+summary(model_goals_gender)
+```
+```{r}
+region_data <- merged_data |>
+  filter(!is.na(age), !is.na(region), !is.na(totalGoals_value), !is.na(goalAssists_value))
+
+model_goals_region <- lm(totalGoals_value ~ age + region, data = region_data)
+summary(model_goals_region)
+
+model_assists_region <- lm(goalAssists_value ~ age + region, data = region_data)
+summary(model_assists_region)
+```
+
+## 3.b. Players Performance by Assist per Gender
+
+```{r}
+assist_gender_data <- merged_data |>
+  filter(!is.na(gender), !is.na(age), !is.na(goalAssists_value))
+
+ggplot(assist_gender_data, aes(x = age, y = goalAssists_value, color = gender, fill = gender)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", alpha = 0.3) +
+  labs(
+    title = "Player Age vs Total Assists by Gender",
+    x = "Age", y = "Total Assists"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+model_assists_gender <- lm(goalAssists_value ~ age + gender, data = merged_data)
+summary(model_assists_gender)
+```
+
+```{r}
+gender_data <- merged_data |>
+  filter(!is.na(age), !is.na(gender), !is.na(totalGoals_value), !is.na(goalAssists_value))
+
+model_goals_gender <- lm(totalGoals_value ~ age + gender, data = gender_data)
+summary(model_goals_gender)
+
+model_assists_gender <- lm(goalAssists_value ~ age + gender, data = gender_data)
+summary(model_assists_gender)
+
+```
+
+# Processed Data Description
+
+**Join Quality:**
+
+- Verified that joins did not inflate row counts or create duplicates.
+
+- Sample observations were checked for matching player names and stats.
+
+**Summary Statistics:**
+
+- Tables of average age, goals scored, and distributions by gender and region.
+
+- Mean and standard deviation for goals across age groups.
+
+- Publication-Quality Plots
+
+- Several ggplot2 visualizations (scatter, bar, etc.)
+
+- Age vs. Goals with geom_point() and geom_smooth() (color-coded by gender or region).
+
+- League-specific plots for deeper breakdowns.
+
+- Facets by gender or league to reveal trends.
+
+# Statistical Analysis
+
+To formally assess the relationships identified in the data visualizations, we conducted a series of linear regression models examining how player age is associated with performance outcomes — specifically, total goals and assists. We ran six models to align with our three-part research structure: overall trends, differences by gender, and differences by region.
+
+### 1. **Overall Relationship Between Age and Performance**
+
+We began with two simple linear regressions:
+
+- **Model 1:** `totalGoals_value ~ age`
+- **Model 2:** `goalAssists_value ~ age`
+
+#### Model 1: Goals ~ Age
+- Intercept: **0.0153**
+- Coefficient for age: **0.00932**
+- R²: **0.0045**
+
+- A one-year increase in age is associated with an average increase of 0.009 goals. While the coefficient is highly significant (p < 0.001), the R² value is very low, indicating that age explains less than 1% of the variation in goals scored.
+
+#### Model 2: Assists ~ Age
+- Intercept: **0.0153**
+- Coefficient for age: **0.00932**
+- R²: **0.0045**
+
+Similarly, assists increase slightly with age, but the low R² value suggests that age alone is not a strong predictor of player assists.
+
+### 2. **Performance by Age and Region**
+
+Model was expanded to include geographic region:
+
+- **Model 5:** `totalGoals_value ~ age + region`
+- **Model 6:** `goalAssists_value ~ age + region`
+
+#### Model 3: Goals ~ Age + Region
+- Intercept: **–0.3345**
+- Age coefficient: **0.01984**
+- Region coefficients (vs. Africa):
+  - Asia-Pacific: **+0.591**
+  - Europe: **+0.440**
+  - South America: **+0.279**
+- R²: **0.0192**
+
+- Region explains more variation than gender. Players in Asia-Pacific and Europe score significantly more goals than those in Africa, even after accounting for age.
+
+#### Model 4: Assists ~ Age + Region
+- Intercept: **–0.144**
+- Age coefficient: **0.0105**
+- Region coefficients (vs. Africa):
+  - Asia-Pacific: **+0.370**
+  - Europe: **+0.271**
+  - South America: **+0.109**
+- R²: **0.0168**
+
+
+- Regional effects are also apparent in assists. Europe and Asia-Pacific again show higher assist rates relative to Africa, though the overall model fit is still limited.
+
+
+### 3. **Performance by Age and Gender**
+
+Next, we controlled for gender in our models:
+
+- **Model 3:** `totalGoals_value ~ age + gender`
+- **Model 4:** `goalAssists_value ~ age + gender`
+
+#### Model 5: Goals ~ Age + Gender
+- Intercept: **0.117**
+- Age coefficient: **0.01904**
+- Gender (Male) coefficient: **–0.2045**
+- R²: **0.0066**
+
+- Controlling for gender, the effect of age on goals remains positive and significant. Male players, on average, score about 0.20 fewer goals than female players, all else equal. Still, the R² remains low.
+
+#### Model 6: Assists ~ Age + Gender
+- Intercept: **0.155**
+- Age coefficient: **0.00948**
+- Gender (Male) coefficient: **–0.149**
+- R²: **0.0045**
+
+- The gender difference persists in assists. Male players average about 0.15 fewer assists than female players, holding age constant. Again, age has a statistically significant but weak effect.
+
+
+Across all models, age shows a positive and statistically significant association with goals and assists. However, the explanatory power is low in every case (R² < 0.02), suggesting that factors other than age — such as playing time, team role, or position — likely account for most of the variance in performance.
+
+# Key Analysis 
+For each question, I used:
+
+Scatterplots with regression lines to visualize the age-performance relationship
+
+Bar charts and histograms to explore averages and distributions
+
+Violin and box plots to compare groups like regions and genders
+
+Then, I ran six regression models:
+
+Goals and assists ~ age (overall)
+
+Goals and assists ~ age + gender
+
+Goals and assists ~ age + region
+
+Key insights:
+
+Age has a small but positive effect on both goals and assists.
+
+Gender and region matter: male players and players from Africa tend to have slightly lower scoring rates.
+
+However, R² values were low (<2%), meaning age explains only a small fraction of performance variation — suggesting other factors like position, minutes played, or team tactics likely play a larger role.
+
+# Discussion
+
+**Interpretation:**
+
+- Clear negative or positive trends between age and goals depending on gender or region.
+
+- Older players tend to score more or less depending on context (league or region), possibly due to experience or team role.
+
+Limitations:
+
+- Some missing or biased data (e.g., not all leagues equally represented).
+
+- Data may lack off-the-ball metrics like injuries or time played.
+
+- Causal claims are limited—these are correlations.
+
+# Challenges Faced
+The data was fairly messy and came in three separate datasets: base data, player stats, and lineups. Each had different formats and levels of missingness.
+
+To clean the data, I:
+
+Standardized column names using janitor::clean_names()
+
+Ensured correct data types for age, goals, and categorical variables
+
+Removed rows with missing or invalid values
+
+Created a region variable using pattern recognition in league codes
+
+Merged the datasets by athleteId and ensured no duplicates or broken joins
+
+This allowed me to build a unified dataset suitable for analysis.
+
+# Revisions 
+
+- Include a hyperlinked table of contents
+- Combine your separate regression specifications for totalGoals_value into a single table with feols and etable
+- Figure out where negative ages are coming from and deal with them
+- Add an age squared term in a new regression specification and include it in the table with the other regressions
+
+## Run all models
+```{r}
+library(fixest)
+
+# Models
+model_overall <- feols(totalGoals_value ~ age, data = merged_data)
+model_gender <- feols(totalGoals_value ~ age + gender, data = merged_data)
+model_region <- feols(totalGoals_value ~ age + region, data = merged_data)
+
+# Age squared model
+model_age_sq <- feols(totalGoals_value ~ age + I(age^2), data = merged_data)
+
+# Combine all in one table
+etable(model_overall, model_gender, model_region, model_age_sq)
+
+```
+
+
+## Find and handle negative ages (included in the updated code as well)
+
+
+```{r}
+# Check negative ages
+negative_ages <- merged_data %>% filter(age < 0)
+print(negative_ages)
+
+# Option 1: remove
+merged_data_clean <- merged_data %>% filter(age >= 0)
+
+# Option 2: set to NA
+merged_data <- merged_data %>% mutate(age = ifelse(age < 0, NA, age))
+```
+
+
+## Add an age squared regression
+```{r}
+
+# Handle negative ages
+merged_data_clean <- merged_data %>% filter(age >= 0)
+
+# Run regressions
+model_overall <- feols(totalGoals_value ~ age, data = merged_data_clean)
+model_gender <- feols(totalGoals_value ~ age + gender, data = merged_data_clean)
+model_region <- feols(totalGoals_value ~ age + region, data = merged_data_clean)
+model_age_sq <- feols(totalGoals_value ~ age + I(age^2), data = merged_data_clean)
+
+# Output combined table
+etable(model_overall, model_gender, model_region, model_age_sq)
+
+```
+
