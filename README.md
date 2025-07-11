@@ -66,5 +66,7 @@ Data sources are anonymized or simulated for educational use.
 
 This repository showcases applied skills in sports analytics, econometric modeling, and data-driven storytelling.
 
+.py files are GPT's written to do simple tasks that are code I can convert into apps/ websites. 
+
 Future work includes enhancing visual interactivity (using Tableau) and expanding modeling complexity.
 
